@@ -141,6 +141,9 @@ def inject_mesh(init_method):
         # the __init__.
         if mesh is not None:
             instance._mesh = mesh
+        is_local = kwargs.pop("is_local", None)
+        if is_local is not None:
+            instance._is_local = is_local
         init_method(instance, *args, **kwargs)
 
     return tf.__internal__.decorator.make_decorator(

@@ -666,6 +666,10 @@ def sync_to_numpy_or_python_type(tensors):
     """
     if isinstance(tensors, tf.distribute.experimental.coordinator.RemoteValue):
         tensors = tensors.fetch()
+    if isinstance(tensors, list) and isinstance(
+        tensors[0], tf.distribute.experimental.coordinator.RemoteValue
+    ):
+        tensors = tf.nest.map_structure(lambda t: t.fetch(), tensors)
 
     def _to_single_numpy_or_python_type(t):
         # Don't turn ragged or sparse tensors to NumPy.

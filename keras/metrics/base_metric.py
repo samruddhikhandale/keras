@@ -31,6 +31,7 @@ from keras.saving.legacy.saved_model import metric_serialization
 from keras.utils import generic_utils
 from keras.utils import losses_utils
 from keras.utils import metrics_utils
+from keras.utils import tf_contextlib
 from keras.utils import tf_utils
 
 # isort: off
@@ -355,6 +356,8 @@ class Metric(base_layer.Layer, metaclass=abc.ABCMeta):
         else:
             strategy = None
 
+        additional_kwargs = {}
+
         # TODO(b/120571621): Make `ON_READ` work with Keras metrics on TPU.
         if backend.is_tpu_strategy(strategy):
             synchronization = tf.VariableSynchronization.ON_WRITE
@@ -365,10 +368,31 @@ class Metric(base_layer.Layer, metaclass=abc.ABCMeta):
                     self._mesh, tf.TensorShape(shape).rank
                 )
             }
-        else:
-            additional_kwargs = {}
+        if getattr(self, "_is_local", False):
+            # Metrics created within a tf.function should use tf2 Variables, so
+            # that they can be local variables that are freely usable and
+            # mutable within the tf.function, using the
+            # `experimental_enable_variable_lifting=False` argument.
+            def local_v2_var_creator(
+                initializer=None, dtype=None, shape=None, **kwargs
+            ):
+                init_val, var_dtype = base_layer_utils.infer_init_val_and_dtype(
+                    initializer, dtype, shape
+                )
+                v1_only_args = ["use_resource", "collections"]
+                for v1_arg in v1_only_args:
+                    kwargs.pop(v1_arg, None)
+                kwargs["experimental_enable_variable_lifting"] = False
+                return tf.Variable(
+                    initial_value=init_val,
+                    dtype=var_dtype,
+                    shape=shape,
+                    **kwargs,
+                )
 
-        with tf_utils.maybe_init_scope(layer=self):
+            additional_kwargs["getter"] = local_v2_var_creator
+
+        with self._maybe_init_scope():
             return super().add_weight(
                 name=name,
                 shape=shape,
@@ -382,6 +406,16 @@ class Metric(base_layer.Layer, metaclass=abc.ABCMeta):
             )
 
     ### End: For use by subclasses ###
+
+    @tf_contextlib.contextmanager
+    def _maybe_init_scope(self):
+        # Metric Variables created inside a tf.function should be local by
+        # default rather than being lifted out of the graph by `init_scope`.
+        if not getattr(self, "_is_local", False):
+            with tf_utils.maybe_init_scope(layer=self):
+                yield
+        else:
+            yield
 
     @property
     def trainable_weights(self):
@@ -932,11 +966,18 @@ class SumOverBatchSizeMetricWrapper(SumOverBatchSize):
         return dict(list(base_config.items()) + list(config.items()))
 
 
-def clone_metric(metric):
+def clone_metric(metric, is_local=False):
     """Returns a clone of the metric if stateful, otherwise returns it as is."""
     if isinstance(metric, Metric):
-        with tf.init_scope():
-            return metric.__class__.from_config(metric.get_config())
+        # Metric Variables created inside a tf.function should be local by
+        # default rather than being lifted out of the graph by `init_scope`.
+        if not is_local:
+            with tf.init_scope():
+                return metric.__class__.from_config(metric.get_config())
+        else:
+            return metric.__class__.from_config(
+                {**metric.get_config(), "is_local": is_local}
+            )
     return metric
 
 
