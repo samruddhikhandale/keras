@@ -1,13 +1,22 @@
+// For more details, see https://aka.ms/devcontainer.json.
 {
-    "dockerFile": "Dockerfile",
+    "build": {
+        "context": ".",
+        "dockerfile": "Dockerfile"
+    },
+    
     "postCreateCommand": "sh /setup.sh",
-    "extensions": ["ms-python.python"],
-    "settings": {
-        "files.watcherExclude": {
-            "**/bazel-*/**": true
-        },
-        "search.exclude": {
-            "**/bazel-*/**": true
+    "waitFor": "postCreateCommand",
+
+    // Configure tool-specific properties.
+    "customizations": {
+        "settings": {
+            "files.watcherExclude": {
+                "**/bazel-*/**": true
+            },
+            "search.exclude": {
+                "**/bazel-*/**": true
+            }
         }
     }
 }
