@@ -5,7 +5,7 @@
         "dockerfile": "Dockerfile"
     },
     
-    "postCreateCommand": "sh /setup.sh",
+    "postCreateCommand": "sh .devcontainer/setup.sh",
     "waitFor": "postCreateCommand",
 
     // Configure tool-specific properties.
